@@ -1,0 +1,29 @@
+menu "OS UI"
+
+config OS_UI_STRIP_ROWS
+    int "Render strip height in rows (multiple of 4)"
+    default 80
+    range 8 160
+
+config OS_UI_BUF_PSRAM
+    bool "Allocate the LVGL render buffer in PSRAM instead of internal SRAM"
+    default y
+
+config OS_UI_TX_CHUNK_BYTES
+    int "Size of each of the two DMA transmit buffers in internal SRAM (bytes)"
+    default 16384
+    range 4096 65536
+    help
+        A rendered strip is rotated and sent in chunks of this size. Two buffers are
+        used so the CPU rotates one chunk while the DMA sends the other.
+
+config OS_UI_PCLK_MHZ
+    int "QSPI pixel clock (MHz)"
+    default 80
+    range 10 80
+
+config OS_UI_FLUSH_BENCH
+    bool "Run a full-screen flush benchmark at start-up"
+    default n
+
+endmenu

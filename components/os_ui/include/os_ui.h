@@ -12,7 +12,9 @@ extern "C" {
 
 // Brings up bus, panel, touch and LVGL, starts the `ui` task and shows the
 // hardware test screen. Backlight stays off until the first frame is flushed.
-esp_err_t os_ui_start(void);
+// `screen_cb` builds the first screen before the `ui` task starts (NULL = hardware test screen).
+esp_err_t os_ui_start(void (*screen_cb)(void));
+void os_ui_test_screen(void);
 
 #ifdef __cplusplus
 }

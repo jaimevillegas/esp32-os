@@ -1,4 +1,5 @@
-// LVGL 9 <-> esp_lcd bridge: partial render mode, two internal-SRAM DMA strips.
+// LVGL 9 <-> esp_lcd bridge: partial render mode. The render strip can live in PSRAM;
+// it is rotated and sent in chunks through two small internal-SRAM DMA buffers.
 #include "os_ui.h"
 
 #include "bsp_es3c35p.h"
@@ -13,8 +14,9 @@
 
 static const char *TAG = "os_ui";
 
-#define STRIP_ROWS   32
+#define STRIP_ROWS   CONFIG_OS_UI_STRIP_ROWS
 #define STRIP_BYTES  (OS_UI_W * STRIP_ROWS * 2)
+#define TX_BYTES     CONFIG_OS_UI_TX_CHUNK_BYTES
 
 // Raw touch is portrait 320x480, same orientation as the native panel. LVGL 9
 // rotates indev points itself according to the display rotation, so the read
@@ -25,19 +27,13 @@ static const char *TAG = "os_ui";
 #define TOUCH_RAW_Y_MIN  18
 #define TOUCH_RAW_Y_MAX  455
 
-// Flush benchmark: set to 1 to time full-screen fills before LVGL starts.
-#ifndef OS_UI_BENCH
-#define OS_UI_BENCH 0
-#endif
-#ifndef OS_UI_PCLK_HZ
-#define OS_UI_PCLK_HZ (80 * 1000 * 1000)
-#endif
+#define OS_UI_PCLK_HZ (CONFIG_OS_UI_PCLK_MHZ * 1000 * 1000)
 
 static esp_lcd_panel_handle_t s_panel;
 static lv_display_t *s_disp;
 static volatile bool s_first_frame;
-static uint8_t *s_tx_buf;               // rotated + byte-swapped strip handed to the DMA
-static SemaphoreHandle_t s_tx_free;     // given by the ISR when the DMA finished
+static uint8_t *s_tx_buf[2];            // rotated + byte-swapped chunks handed to the DMA
+static SemaphoreHandle_t s_tx_free;     // counting (2): one token per free tx buffer, given by the ISR
 
 void os_ui_test_screen(void);
 
@@ -50,21 +46,32 @@ static bool IRAM_ATTR on_color_done(esp_lcd_panel_io_handle_t io,
 }
 
 // Plan B: the panel keeps its native 320x480 orientation (MADCTL.MV is ignored by
-// this module). LVGL renders landscape strips; here they are rotated 90 degrees and
-// byte-swapped into the DMA buffer, then sent to the rotated area.
+// this module). LVGL renders landscape strips; here every strip is cut into column
+// slices that fit a tx buffer, each slice is rotated and byte-swapped into the buffer
+// and sent to its rotated area. DMA completes in order, so alternating two buffers
+// with a two-token semaphore is enough to know when a buffer is free again.
 static void flush_cb(lv_display_t *d, const lv_area_t *a, uint8_t *px)
 {
-    int w = lv_area_get_width(a), h = lv_area_get_height(a);
-    xSemaphoreTake(s_tx_free, portMAX_DELAY);       // previous DMA done
-    lv_area_t r = *a;
-    lv_display_rotate_area(d, &r);
-    lv_draw_sw_rotate(px, s_tx_buf, w, h, w * 2, h * 2,
-                      LV_DISPLAY_ROTATION_270, LV_COLOR_FORMAT_RGB565);
-    lv_draw_sw_rgb565_swap(s_tx_buf, w * h);
-    bool last = lv_display_flush_is_last(d);
-    lv_display_flush_ready(d);                      // LVGL may render the next strip now
-    esp_lcd_panel_draw_bitmap(s_panel, r.x1, r.y1, r.x2 + 1, r.y2 + 1, s_tx_buf);
-    if (last) s_first_frame = true;
+    const int w = lv_area_get_width(a), h = lv_area_get_height(a);
+    int slice_w = (TX_BYTES / (h * 2)) & ~3;        // keep slices 4-pixel aligned
+    if (slice_w < 4) slice_w = 4;
+    static unsigned n;
+
+    for (int cx = 0; cx < w; cx += slice_w) {
+        const int cw = LV_MIN(slice_w, w - cx);
+        uint8_t *buf = s_tx_buf[n++ & 1];
+        xSemaphoreTake(s_tx_free, portMAX_DELAY);   // this buffer's previous DMA is done
+        lv_area_t r = { a->x1 + cx, a->y1, a->x1 + cx + cw - 1, a->y2 };
+        lv_display_rotate_area(d, &r);
+        lv_draw_sw_rotate(px + cx * 2, buf, cw, h, w * 2, h * 2,
+                          LV_DISPLAY_ROTATION_270, LV_COLOR_FORMAT_RGB565);
+        lv_draw_sw_rgb565_swap(buf, cw * h);
+        if (cx + cw >= w) {                         // whole strip consumed: LVGL may reuse it
+            if (lv_display_flush_is_last(d)) s_first_frame = true;
+            lv_display_flush_ready(d);
+        }
+        esp_lcd_panel_draw_bitmap(s_panel, r.x1, r.y1, r.x2 + 1, r.y2 + 1, buf);
+    }
 }
 
 // The ST77922 needs x_start % 4 == 0 and x_end == 4N+3. Applied to both axes
@@ -78,23 +85,29 @@ static void invalidate_cb(lv_event_t *e)
     if (a->y2 > OS_UI_H - 1) a->y2 = OS_UI_H - 1;
 }
 
-#if OS_UI_BENCH
-// Fills the whole native 320x480 panel with a pattern through the same tx buffer
-// and semaphore used by the flush path, and logs the mean time per full screen.
+#ifdef CONFIG_OS_UI_FLUSH_BENCH
+// Fills the whole native 320x480 panel through the same tx buffers and semaphore
+// used by the flush path, and logs the mean time per full screen.
 static void bench_flush(void)
 {
-    const int rows = STRIP_BYTES / (BSP_LCD_NATIVE_W * 2);      // 48 rows per strip
+    const int rows = (TX_BYTES / (BSP_LCD_NATIVE_W * 2)) & ~3;
     const int runs = 100;
-    uint16_t *p = (uint16_t *)s_tx_buf;
-    for (int i = 0; i < STRIP_BYTES / 2; i++) p[i] = (i & 1) ? 0xF81F : 0x07E0;
+    for (int b = 0; b < 2; b++) {
+        uint16_t *p = (uint16_t *)s_tx_buf[b];
+        for (int i = 0; i < TX_BYTES / 2; i++) p[i] = (i & 1) ? 0xF81F : 0x07E0;
+    }
+    unsigned n = 0;
     int64_t t0 = esp_timer_get_time();
-    for (int n = 0; n < runs; n++) {
+    for (int r = 0; r < runs; r++) {
         for (int y = 0; y < BSP_LCD_NATIVE_H; y += rows) {
+            int ye = LV_MIN(y + rows, BSP_LCD_NATIVE_H);
             xSemaphoreTake(s_tx_free, portMAX_DELAY);
-            esp_lcd_panel_draw_bitmap(s_panel, 0, y, BSP_LCD_NATIVE_W, y + rows, s_tx_buf);
+            esp_lcd_panel_draw_bitmap(s_panel, 0, y, BSP_LCD_NATIVE_W, ye, s_tx_buf[n++ & 1]);
         }
     }
-    xSemaphoreTake(s_tx_free, portMAX_DELAY);                   // last DMA finished
+    xSemaphoreTake(s_tx_free, portMAX_DELAY);                   // drain both buffers
+    xSemaphoreTake(s_tx_free, portMAX_DELAY);
+    xSemaphoreGive(s_tx_free);
     xSemaphoreGive(s_tx_free);
     int64_t dt = esp_timer_get_time() - t0;
     ESP_LOGW(TAG, "BENCH pclk=%d MHz: full screen %.2f ms (%d runs, %.1f fps max)",
@@ -137,7 +150,7 @@ static void ui_task(void *arg)
     }
 }
 
-esp_err_t os_ui_start(void)
+esp_err_t os_ui_start(void (*screen_cb)(void))
 {
     ESP_ERROR_CHECK(bsp_backlight_init());
     bsp_backlight_set(0);
@@ -147,14 +160,13 @@ esp_err_t os_ui_start(void)
 
     lv_init();
     lv_tick_set_cb(tick_cb);
-    s_tx_free = xSemaphoreCreateBinary();
-    xSemaphoreGive(s_tx_free);
+    s_tx_free = xSemaphoreCreateCounting(2, 2);
     s_disp = lv_display_create(BSP_LCD_NATIVE_W, BSP_LCD_NATIVE_H);
     lv_display_set_rotation(s_disp, LV_DISPLAY_ROTATION_270);   // logical 480x320
 
     esp_lcd_panel_io_handle_t io;
     bsp_display_config_t cfg = {
-        .max_transfer_sz = STRIP_BYTES,
+        .max_transfer_sz = TX_BYTES,
         .pclk_hz = OS_UI_PCLK_HZ,
         .landscape_mv = false,
         .on_color_done = on_color_done,
@@ -162,16 +174,22 @@ esp_err_t os_ui_start(void)
     };
     ESP_ERROR_CHECK(bsp_display_init(&cfg, &io, &s_panel));
 
-    // One render strip + one transmit strip, both internal SRAM and DMA-capable.
+    // Render strip (PSRAM or SRAM) + two small transmit buffers (internal SRAM, DMA).
+#ifdef CONFIG_OS_UI_BUF_PSRAM
+    void *draw = heap_caps_aligned_alloc(64, STRIP_BYTES, MALLOC_CAP_SPIRAM);
+#else
     void *draw = heap_caps_malloc(STRIP_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    s_tx_buf = heap_caps_malloc(STRIP_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    ESP_RETURN_ON_FALSE(draw && s_tx_buf, ESP_ERR_NO_MEM, TAG, "draw buffers");
+#endif
+    for (int i = 0; i < 2; i++) {
+        s_tx_buf[i] = heap_caps_malloc(TX_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
+    ESP_RETURN_ON_FALSE(draw && s_tx_buf[0] && s_tx_buf[1], ESP_ERR_NO_MEM, TAG, "draw buffers");
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(s_disp, draw, NULL, STRIP_BYTES, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(s_disp, flush_cb);
     lv_display_add_event_cb(s_disp, invalidate_cb, LV_EVENT_INVALIDATE_AREA, NULL);
 
-#if OS_UI_BENCH
+#ifdef CONFIG_OS_UI_FLUSH_BENCH
     bench_flush();
 #endif
     if (bsp_touch_init(i2c) == ESP_OK) {
@@ -180,8 +198,15 @@ esp_err_t os_ui_start(void)
         lv_indev_set_read_cb(in, touch_read_cb);
     }
 
-    os_ui_test_screen();
+    (screen_cb ? screen_cb : os_ui_test_screen)();
 
     xTaskCreatePinnedToCore(ui_task, "ui", 8192, NULL, 4, NULL, 1);
+#ifdef CONFIG_OS_UI_BUF_PSRAM
+    const char *where = "PSRAM";
+#else
+    const char *where = "SRAM";
+#endif
+    ESP_LOGI(TAG, "ui up: strip %d rows (%d B) in %s, 2 x %d B tx buffers in SRAM, pclk %d MHz",
+             STRIP_ROWS, STRIP_BYTES, where, TX_BYTES, CONFIG_OS_UI_PCLK_MHZ);
     return ESP_OK;
 }
