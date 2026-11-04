@@ -27,6 +27,16 @@ typedef struct {
 } os_ui_shell_cfg_t;
 esp_err_t os_ui_start_shell(const os_ui_shell_cfg_t *cfg);
 
+// Light sleep support. `request_sleep` is callable from any task: it stores `sequence`
+// and wakes the ui task, which runs it (so LVGL is never touched concurrently). The
+// sequence calls suspend before esp_light_sleep_start() and resume after it.
+// suspend: waits for the last DMA flush, backlight 0, panel SLPIN.
+// resume: panel SLPOUT, touch check, full redraw; the backlight returns after the first
+// frame is flushed. Both log failures, return the first error and never abort half way.
+void os_ui_request_sleep(void (*sequence)(void));
+esp_err_t os_ui_display_suspend(void);
+esp_err_t os_ui_display_resume(void);
+
 // Wakes the ui task (e.g. after posting an event it must handle).
 void os_ui_wake(void);
 

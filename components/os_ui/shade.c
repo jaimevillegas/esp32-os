@@ -90,6 +90,24 @@ void ui_shade_drag_event(lv_event_t *e)
     }
 }
 
+void ui_shade_close_now(void)
+{
+    if (!s_shade) return;
+    lv_anim_delete(NULL, anim_cb);
+    s_dragging = false;
+    set_y(-UI_SHADE_H);
+}
+
+// Implemented by os_core (sleep_glue.cpp); weak so os_ui also links without it.
+extern void os_core_request_sleep(void) __attribute__((weak));
+
+static void sleep_btn_cb(lv_event_t *e)
+{
+    ui_shade_close_now();
+    if (os_core_request_sleep) os_core_request_sleep();
+    else LV_LOG_WARN("sleep requested but os_core is not linked");
+}
+
 static void slider_release_cb(lv_event_t *e)
 {
     if (s_commit_cb) s_commit_cb(s_brightness);
@@ -151,6 +169,17 @@ void ui_shade_create(void)
     lv_obj_set_ext_click_area(slider, 16);
     lv_obj_add_event_cb(slider, slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(slider, slider_release_cb, LV_EVENT_RELEASED, NULL);
+
+    lv_obj_t *sleep_btn = lv_button_create(s_shade);
+    lv_obj_set_size(sleep_btn, 200, 52);
+    lv_obj_align(sleep_btn, LV_ALIGN_TOP_MID, 0, 100);
+    lv_obj_set_style_bg_color(sleep_btn, lv_palette_darken(LV_PALETTE_RED, 2), 0);
+    lv_obj_set_style_radius(sleep_btn, 14, 0);
+    lv_obj_add_event_cb(sleep_btn, sleep_btn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *sleep_lbl = lv_label_create(sleep_btn);
+    lv_label_set_text(sleep_lbl, LV_SYMBOL_POWER "  Sleep");
+    lv_obj_set_style_text_font(sleep_lbl, &lv_font_montserrat_20, 0);
+    lv_obj_center(sleep_lbl);
 
     lv_obj_t *grab = lv_obj_create(s_shade);
     lv_obj_remove_style_all(grab);

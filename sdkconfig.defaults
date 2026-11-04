@@ -47,5 +47,7 @@ CONFIG_LV_USE_STDLIB_SPRINTF_CLIB=y
 # --- audio (svc_audio) ---
 
 # --- sleep / power ---
+# Manual light sleep (esp_light_sleep_start + GPIO0 wake) needs no extra Kconfig:
+# CONFIG_PM_ENABLE and automatic light sleep are deliberately left off.
 
 # --- diagnostics UI ---

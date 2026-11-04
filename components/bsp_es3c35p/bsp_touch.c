@@ -81,3 +81,19 @@ int bsp_touch_read(bsp_touch_point_t *pts, int max_pts)
     }
     return n;
 }
+
+// The ST77922 touch sleep/wake registers are not documented in the vendor material, so
+// the controller is left running during panel sleep. After wake, probe it and pulse
+// its reset line only if it no longer answers.
+esp_err_t bsp_touch_resume(void)
+{
+    if (!s_dev) return ESP_ERR_INVALID_STATE;
+    uint8_t n = 0;
+    if (read_reg(REG_MAX_TOUCHES, &n, 1) == ESP_OK) return ESP_OK;
+    ESP_LOGW(TAG, "no answer after wake, resetting the controller");
+    gpio_set_level(BSP_PIN_TP_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(BSP_PIN_TP_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    return read_reg(REG_MAX_TOUCHES, &n, 1);
+}

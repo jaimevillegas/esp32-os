@@ -1,15 +1,21 @@
 #include "bsp_es3c35p.h"
 
+#include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/spi_master.h"
 #include "esp_check.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_st77922.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <math.h>
 
 static const char *TAG = "bsp_display";
 #define LCD_HOST SPI2_HOST
+
+static esp_lcd_panel_io_handle_t s_io;
+static esp_lcd_panel_handle_t s_panel;
 
 #include "st77922_init_cmds.inc"
 
@@ -45,6 +51,8 @@ esp_err_t bsp_display_init(const bsp_display_config_t *cfg,
         .vendor_config = &vendor,
     };
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_st77922(*io, &panel_cfg, panel), TAG, "new panel");
+    s_io = *io;
+    s_panel = *panel;
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(*panel), TAG, "reset");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(*panel), TAG, "init");
     if (cfg->landscape_mv) {
@@ -52,6 +60,50 @@ esp_err_t bsp_display_init(const bsp_display_config_t *cfg,
     }
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(*panel, true), TAG, "disp on");
     return ESP_OK;
+}
+
+// ---- Panel sleep -----------------------------------------------------------
+// The esp_lcd_st77922 driver does not implement disp_sleep (esp_lcd_panel_disp_sleep()
+// returns ESP_ERR_NOT_SUPPORTED), so the standard MIPI DCS commands are sent through
+// the panel IO with the same QSPI framing the driver uses (opcode 0x02, cmd in bits 15:8).
+#define DCS_SLPIN   0x10
+#define DCS_SLPOUT  0x11
+#define DCS_DISPOFF 0x28
+#define DCS_DISPON  0x29
+#define QSPI_CMD(c) ((0x02u << 24) | ((uint32_t)(c) << 8))
+
+static esp_err_t dcs(uint8_t cmd)
+{
+    return esp_lcd_panel_io_tx_param(s_io, QSPI_CMD(cmd), NULL, 0);
+}
+
+esp_err_t bsp_display_sleep(void)
+{
+    ESP_RETURN_ON_FALSE(s_io, ESP_ERR_INVALID_STATE, TAG, "display not initialised");
+    ESP_RETURN_ON_ERROR(dcs(DCS_DISPOFF), TAG, "DISPOFF");
+    vTaskDelay(pdMS_TO_TICKS(20));
+    ESP_RETURN_ON_ERROR(dcs(DCS_SLPIN), TAG, "SLPIN");
+    vTaskDelay(pdMS_TO_TICKS(120));     // datasheet: no SLPOUT/reset within 120 ms of SLPIN
+    return ESP_OK;
+}
+
+esp_err_t bsp_display_wake(void)
+{
+    ESP_RETURN_ON_FALSE(s_io, ESP_ERR_INVALID_STATE, TAG, "display not initialised");
+    esp_err_t err = dcs(DCS_SLPOUT);
+    if (err == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(120));     // SLPOUT needs 120 ms before the next command
+        err = dcs(DCS_DISPON);
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+#ifdef BSP_DISPLAY_WAKE_REINIT
+    // Fallback if SLPOUT alone does not bring the TDDI panel back on hardware: run the
+    // full vendor init sequence again (it contains its own SLPOUT + DISPON).
+    err = esp_lcd_panel_init(s_panel);
+    if (err == ESP_OK) err = esp_lcd_panel_disp_on_off(s_panel, true);
+#endif
+    if (err != ESP_OK) ESP_LOGE(TAG, "panel wake failed: %s", esp_err_to_name(err));
+    return err;
 }
 
 // ---- Backlight -------------------------------------------------------------
@@ -84,6 +136,26 @@ void bsp_backlight_set(uint8_t percent)
     uint32_t duty = (uint32_t)lroundf(powf(percent / 100.0f, 2.2f) * BL_MAX);
     ledc_set_duty(BL_MODE, BL_CHANNEL, duty);
     ledc_update_duty(BL_MODE, BL_CHANNEL);
+}
+
+// Light sleep gates the LEDC clock, so the pin is turned into a plain GPIO driven low
+// and latched with a pad hold while the CPU sleeps.
+void bsp_backlight_suspend(void)
+{
+    bsp_backlight_set(0);
+    ledc_stop(BL_MODE, BL_CHANNEL, 0);
+    gpio_reset_pin(BSP_PIN_LCD_BL);
+    gpio_set_direction(BSP_PIN_LCD_BL, GPIO_MODE_OUTPUT);
+    gpio_set_level(BSP_PIN_LCD_BL, 0);
+    gpio_hold_en(BSP_PIN_LCD_BL);
+}
+
+esp_err_t bsp_backlight_resume(void)
+{
+    gpio_hold_dis(BSP_PIN_LCD_BL);
+    esp_err_t err = bsp_backlight_init();   // re-attaches the pin to LEDC at duty 0
+    s_brightness = 0;
+    return err;
 }
 
 uint8_t bsp_backlight_get(void) { return s_brightness; }

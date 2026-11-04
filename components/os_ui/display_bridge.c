@@ -34,6 +34,8 @@ static const char *TAG = "os_ui";
 static esp_lcd_panel_handle_t s_panel;
 static lv_display_t *s_disp;
 static volatile bool s_first_frame;
+static bool s_bl_on;                    // ui task only: backlight restored after the first frame
+static void (*volatile s_sleep_fn)(void);   // pending sleep sequence, runs on the ui task
 static TaskHandle_t s_ui_task;
 static void (*s_tick_hook)(void);
 static uint8_t *s_tx_buf[2];            // rotated + byte-swapped chunks handed to the DMA
@@ -144,15 +146,77 @@ void os_ui_wake(void)
     if (s_ui_task) xTaskNotifyGive(s_ui_task);
 }
 
+// ---- Sleep support ---------------------------------------------------------
+// The sequence itself lives in os_core (sleep_glue.cpp); these are the display-side
+// steps it calls, always from the ui task so LVGL is never touched concurrently.
+
+void os_ui_request_sleep(void (*sequence)(void))
+{
+    s_sleep_fn = sequence;
+    os_ui_wake();
+}
+
+// Waits for the last display DMA flush, blacks out the backlight and puts the panel
+// into SLPIN. Always leaves the backlight at 0; returns the first error but never
+// aborts half way, so the caller can still go to sleep.
+esp_err_t os_ui_display_suspend(void)
+{
+    esp_err_t ret = ESP_OK;
+    int got = 0;
+    for (; got < 2; got++) {                    // both tx buffers free = no DMA in flight
+        if (xSemaphoreTake(s_tx_free, pdMS_TO_TICKS(500)) != pdTRUE) {
+            ESP_LOGE(TAG, "display DMA did not finish within 500 ms");
+            ret = ESP_ERR_TIMEOUT;
+            break;
+        }
+    }
+    while (got-- > 0) xSemaphoreGive(s_tx_free);
+    bsp_backlight_suspend();
+    esp_err_t e = bsp_display_sleep();
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "panel sleep failed: %s", esp_err_to_name(e));
+        if (ret == ESP_OK) ret = e;
+    }
+    return ret;
+}
+
+// Wakes the panel and touch controller and schedules a full redraw. The backlight
+// stays off until the first frame is flushed (ui_task restores it). Continues past
+// failures: a dark screen with a running CPU is worse than a possibly garbled frame.
+esp_err_t os_ui_display_resume(void)
+{
+    esp_err_t ret = bsp_backlight_resume();
+    if (ret != ESP_OK) ESP_LOGE(TAG, "backlight resume failed: %s", esp_err_to_name(ret));
+    esp_err_t e = bsp_display_wake();
+    if (e != ESP_OK && ret == ESP_OK) ret = e;
+    e = bsp_touch_resume();
+    if (e != ESP_OK) ESP_LOGW(TAG, "touch did not answer after wake: %s", esp_err_to_name(e));
+
+    lv_indev_t *in = lv_indev_get_next(NULL);
+    if (in) lv_indev_reset(in, NULL);           // drop any press state from before sleep
+    ui_shade_close_now();
+    s_first_frame = false;
+    s_bl_on = false;
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(lv_layer_top());
+    lv_obj_invalidate(lv_layer_sys());
+    lv_refr_now(s_disp);                        // render the first frame right away
+    return ret;
+}
+
 static void ui_task(void *arg)
 {
-    bool bl_on = false;
     for (;;) {
+        void (*sleep_fn)(void) = s_sleep_fn;
+        if (sleep_fn) {
+            s_sleep_fn = NULL;
+            sleep_fn();
+        }
         if (s_tick_hook) s_tick_hook();
         uint32_t next = lv_timer_handler();
-        if (!bl_on && s_first_frame) {          // no garbage flash at power-up
+        if (!s_bl_on && s_first_frame) {        // no garbage flash at power-up / wake
             bsp_backlight_set(os_ui_get_brightness());
-            bl_on = true;
+            s_bl_on = true;
         }
         if (next > 50) next = 50;
         if (next == 0) next = 1;
