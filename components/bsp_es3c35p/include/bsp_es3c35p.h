@@ -49,6 +49,8 @@ uint8_t bsp_backlight_get(void);
 
 // ---- I2C bus ---------------------------------------------------------------
 i2c_master_bus_handle_t bsp_i2c_init(void);
+// The shared bus created by bsp_i2c_init() (touch 0x55, ES8311 0x18). NULL before the UI starts.
+i2c_master_bus_handle_t bsp_i2c_get(void);
 // Logs every address that ACKs (answers the H0 question about the I2C map).
 void bsp_i2c_scan(i2c_master_bus_handle_t bus);
 
@@ -61,6 +63,19 @@ typedef struct {
 esp_err_t bsp_touch_init(i2c_master_bus_handle_t bus);
 // Reads one frame. Returns the number of valid points (0 = released).
 int bsp_touch_read(bsp_touch_point_t *pts, int max_pts);
+
+// ---- Battery and USB ---------------------------------------------------------
+// Battery voltage on IO8 (ADC1_CH7) through a 100k/100k divider (schematic: R14/R15).
+// The TP4054 CHRG pin and VBUS are NOT wired to any GPIO.
+#define BSP_PIN_BAT_ADC   8
+#define BSP_BAT_DIVIDER   2
+
+esp_err_t bsp_battery_init(void);
+// Median of 8 calibrated samples, already multiplied by the divider (millivolts).
+uint32_t bsp_battery_read_mv(void);
+// True while the ESP32-S3 USB-Serial-JTAG port sees SOF packets from a host computer.
+// A plain charger or power bank is NOT reported as connected.
+bool bsp_usb_host_connected(void);
 
 #ifdef __cplusplus
 }

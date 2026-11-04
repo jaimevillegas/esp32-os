@@ -11,6 +11,8 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
+#include "os_power.h"
+#include "ui_chrome.h"
 
 static const char *TAG = "os_ui";
 
@@ -32,10 +34,11 @@ static const char *TAG = "os_ui";
 static esp_lcd_panel_handle_t s_panel;
 static lv_display_t *s_disp;
 static volatile bool s_first_frame;
+static TaskHandle_t s_ui_task;
+static void (*s_tick_hook)(void);
 static uint8_t *s_tx_buf[2];            // rotated + byte-swapped chunks handed to the DMA
 static SemaphoreHandle_t s_tx_free;     // counting (2): one token per free tx buffer, given by the ISR
 
-void os_ui_test_screen(void);
 
 static bool IRAM_ATTR on_color_done(esp_lcd_panel_io_handle_t io,
                                     esp_lcd_panel_io_event_data_t *ev, void *ctx)
@@ -136,21 +139,28 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     data->point.y = ly;
 }
 
+void os_ui_wake(void)
+{
+    if (s_ui_task) xTaskNotifyGive(s_ui_task);
+}
+
 static void ui_task(void *arg)
 {
     bool bl_on = false;
     for (;;) {
+        if (s_tick_hook) s_tick_hook();
         uint32_t next = lv_timer_handler();
         if (!bl_on && s_first_frame) {          // no garbage flash at power-up
-            bsp_backlight_set(80);
+            bsp_backlight_set(os_ui_get_brightness());
             bl_on = true;
         }
-        if (next > 50) next = 50;               // TODO H2: block on a notification instead
-        vTaskDelay(pdMS_TO_TICKS(next ? next : 1));
+        if (next > 50) next = 50;
+        if (next == 0) next = 1;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(next));   // sleeps until the next timer or os_ui_wake()
     }
 }
 
-esp_err_t os_ui_start(void (*screen_cb)(void))
+static esp_err_t ui_start(void (*screen_cb)(void), const os_ui_shell_cfg_t *shell)
 {
     ESP_ERROR_CHECK(bsp_backlight_init());
     bsp_backlight_set(0);
@@ -198,9 +208,19 @@ esp_err_t os_ui_start(void (*screen_cb)(void))
         lv_indev_set_read_cb(in, touch_read_cb);
     }
 
-    (screen_cb ? screen_cb : os_ui_test_screen)();
+    if (shell) {
+        lv_theme_default_init(s_disp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED),
+                              true, LV_FONT_DEFAULT);
+        os_power_start();
+        if (shell->first_screen) shell->first_screen();
+        ui_status_bar_create();
+        ui_shade_create();
+        s_tick_hook = shell->tick_hook;
+    } else {
+        (screen_cb ? screen_cb : os_ui_test_screen)();
+    }
 
-    xTaskCreatePinnedToCore(ui_task, "ui", 8192, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(ui_task, "ui", 12288, NULL, 4, &s_ui_task, 1);
 #ifdef CONFIG_OS_UI_BUF_PSRAM
     const char *where = "PSRAM";
 #else
@@ -210,3 +230,6 @@ esp_err_t os_ui_start(void (*screen_cb)(void))
              STRIP_ROWS, STRIP_BYTES, where, TX_BYTES, CONFIG_OS_UI_PCLK_MHZ);
     return ESP_OK;
 }
+
+esp_err_t os_ui_start(void (*screen_cb)(void)) { return ui_start(screen_cb, NULL); }
+esp_err_t os_ui_start_shell(const os_ui_shell_cfg_t *cfg) { return ui_start(NULL, cfg); }

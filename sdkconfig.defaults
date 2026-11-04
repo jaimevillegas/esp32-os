@@ -34,9 +34,18 @@ CONFIG_LV_DEF_REFR_PERIOD=16
 CONFIG_LV_OS_FREERTOS=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
 
 # Most LVGL allocations go to PSRAM; only tiny ones stay in internal SRAM.
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=512
 CONFIG_LV_USE_STDLIB_MALLOC_CLIB=y
 CONFIG_LV_USE_STDLIB_STRING_CLIB=y
 CONFIG_LV_USE_STDLIB_SPRINTF_CLIB=y
+
+# --- storage (svc_storage) ---
+
+# --- audio (svc_audio) ---
+
+# --- sleep / power ---
+
+# --- diagnostics UI ---

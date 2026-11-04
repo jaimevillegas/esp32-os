@@ -1,0 +1,14 @@
+// Apps compiled into the firmware. One OS_APP(name, namespace) per app; the namespace must
+// expose `extern const os::Manifest kManifest`. Order here is the launcher order.
+#if CONFIG_OS_APP_FILES
+OS_APP(files, apps::files)
+#endif
+#if CONFIG_OS_APP_MUSIC
+OS_APP(music, apps::music)
+#endif
+#if CONFIG_OS_APP_SETTINGS
+OS_APP(settings, apps::settings)
+#endif
+#if CONFIG_OS_APP_DIAG
+OS_APP(diag, apps::diag)
+#endif

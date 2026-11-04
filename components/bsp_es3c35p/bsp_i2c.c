@@ -3,6 +3,7 @@
 #include "esp_log.h"
 
 static const char *TAG = "bsp_i2c";
+static i2c_master_bus_handle_t s_bus;
 
 i2c_master_bus_handle_t bsp_i2c_init(void)
 {
@@ -16,6 +17,7 @@ i2c_master_bus_handle_t bsp_i2c_init(void)
     };
     i2c_master_bus_handle_t bus = NULL;
     ESP_ERROR_CHECK(i2c_new_master_bus(&cfg, &bus));
+    s_bus = bus;
     return bus;
 }
 
@@ -28,3 +30,5 @@ void bsp_i2c_scan(i2c_master_bus_handle_t bus)
     }
     ESP_LOGI(TAG, "scan done");
 }
+
+i2c_master_bus_handle_t bsp_i2c_get(void) { return s_bus; }

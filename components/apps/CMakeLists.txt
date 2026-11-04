@@ -1,0 +1,10 @@
+# Apps depend ONLY on os_api (which brings LVGL). Never on ESP-IDF components.
+set(srcs "")
+foreach(app SETTINGS DIAG FILES MUSIC)
+  if(CONFIG_OS_APP_${app})
+    string(TOLOWER ${app} dir)
+    file(GLOB app_srcs "${dir}/*.cpp")
+    list(APPEND srcs ${app_srcs})
+  endif()
+endforeach()
+idf_component_register(SRCS ${srcs} INCLUDE_DIRS "." REQUIRES os_api)

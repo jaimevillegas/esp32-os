@@ -1,0 +1,19 @@
+menu "OS apps"
+
+config OS_APP_SETTINGS
+    bool "Settings"
+    default y
+
+config OS_APP_DIAG
+    bool "Diagnostics"
+    default y
+
+config OS_APP_FILES
+    bool "File explorer (microSD)"
+    default y
+
+config OS_APP_MUSIC
+    bool "Music player"
+    default y
+
+endmenu
