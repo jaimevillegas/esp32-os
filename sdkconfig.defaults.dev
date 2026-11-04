@@ -1,0 +1,2 @@
+# Development build
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
