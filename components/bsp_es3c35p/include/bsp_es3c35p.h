@@ -42,10 +42,17 @@ esp_err_t bsp_display_init(const bsp_display_config_t *cfg,
                            esp_lcd_panel_io_handle_t *io,
                            esp_lcd_panel_handle_t *panel);
 
+// Panel sleep (DCS DISPOFF + SLPIN) / wake (SLPOUT + DISPON, ~140 ms). Backlight is separate.
+esp_err_t bsp_display_sleep(void);
+esp_err_t bsp_display_wake(void);
+
 // ---- Backlight (LEDC, ~20 kHz, gamma-corrected) ----------------------------
 esp_err_t bsp_backlight_init(void);
 void bsp_backlight_set(uint8_t percent);
 uint8_t bsp_backlight_get(void);
+// Around light sleep: park the pin low and held / hand it back to LEDC (duty 0).
+void bsp_backlight_suspend(void);
+esp_err_t bsp_backlight_resume(void);
 
 // ---- I2C bus ---------------------------------------------------------------
 i2c_master_bus_handle_t bsp_i2c_init(void);
@@ -62,6 +69,8 @@ typedef struct {
 
 esp_err_t bsp_touch_init(i2c_master_bus_handle_t bus);
 // Reads one frame. Returns the number of valid points (0 = released).
+// After light sleep: checks that the controller answers, resets it if not.
+esp_err_t bsp_touch_resume(void);
 int bsp_touch_read(bsp_touch_point_t *pts, int max_pts);
 
 // ---- Battery and USB ---------------------------------------------------------

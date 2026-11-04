@@ -51,6 +51,8 @@ CONFIG_FATFS_CODEPAGE_437=y
 # --- audio (svc_audio) ---
 
 # --- sleep / power ---
+# Manual light sleep (esp_light_sleep_start + GPIO0 wake) needs no extra Kconfig:
+# CONFIG_PM_ENABLE and automatic light sleep are deliberately left off.
 
 # --- diagnostics UI ---
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
