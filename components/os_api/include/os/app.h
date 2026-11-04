@@ -32,6 +32,16 @@ struct SysInfo {
   uint32_t psram_free, psram_min, psram_largest;
   uint32_t uptime_s;
   uint32_t ui_stack_free;                      // bytes, high-water mark of the `ui` task
+  // --- added for the diagnostics app; every field has an "unavailable" value ---
+  uint32_t int_total, psram_total;             // heap capacity in bytes (0 = unknown)
+  uint32_t dma_free, dma_largest, dma_total;   // internal DMA-capable memory
+  uint32_t app_size;                           // running firmware image bytes (0 = unknown)
+  uint32_t app_slot_size;                      // OTA slot size of the running image (0 = unknown)
+  uint32_t flash_size;                         // flash chip size (0 = unknown)
+  uint16_t cpu_mhz;                            // current CPU frequency (0 = unknown)
+  uint16_t n_tasks;                            // FreeRTOS tasks
+  int16_t  temp_c10;                           // chip temperature in 0.1 C; INT16_MIN = unavailable
+  int8_t   cpu_load[2];                        // % busy per core; -1 = unavailable
 };
 
 struct PowerInfo {

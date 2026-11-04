@@ -3,4 +3,5 @@ idf_component_register(SRCS "arena.cpp" "bus.cpp" "kv.cpp" "device.cpp" "registr
                             "storage_glue.cpp" "audio_glue.cpp" "sleep_glue.cpp"
                        INCLUDE_DIRS "include"
                        REQUIRES os_api os_ui os_power apps svc_storage svc_audio bsp_es3c35p
-                       PRIV_REQUIRES nvs_flash heap esp_timer esp_hw_support esp_pm driver)
+                       PRIV_REQUIRES nvs_flash heap esp_timer esp_hw_support esp_pm driver
+                                    esp_driver_tsens bootloader_support esp_partition app_update spi_flash)
