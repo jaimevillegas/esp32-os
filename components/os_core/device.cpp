@@ -1,4 +1,5 @@
 #include <cstdarg>
+#include <cstring>
 #include <cstdio>
 
 #include "core_internal.h"
@@ -153,6 +154,20 @@ class DeviceImpl final : public Device {
 
   void requestClose() override { closeForegroundAsync(); }
   void sleep() override { requestSleep(); }
+
+  int appCount() const override { return (int)slotCount(); }
+  bool appInfo(int index, AppInfo& o) const override {
+    const Slot* s = slotAt((size_t)index);
+    if (!s) return false;
+    strlcpy(o.id, s->m->id, sizeof o.id);
+    strlcpy(o.name, s->m->name, sizeof o.name);
+    o.glyph = s->m->glyph;
+    o.enabled = s->enabled;
+    o.can_disable = strcmp(s->m->id, "settings") != 0;
+    o.background = s->m->background;
+    return true;
+  }
+  void setAppEnabled(const char* id, bool enabled) override { setAppEnabledById(id, enabled); }
 };
 
 static DeviceImpl s_device;

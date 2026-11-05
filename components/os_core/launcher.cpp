@@ -13,23 +13,16 @@ static void tile_click(lv_event_t* e) {
   launch((size_t)(uintptr_t)lv_event_get_user_data(e));
 }
 
-lv_obj_t* launcherBuild() {
-  s_screen = lv_obj_create(nullptr);
-  lv_obj_set_style_bg_color(s_screen, lv_color_make(0x0E, 0x11, 0x16), 0);
-  lv_obj_set_scrollable(s_screen, false);
+static lv_obj_t* s_grid;
 
-  lv_obj_t* grid = lv_obj_create(s_screen);
-  lv_obj_remove_style_all(grid);
-  lv_obj_set_pos(grid, 0, OS_UI_BAR_H);
-  lv_obj_set_size(grid, OS_UI_W, OS_UI_H - OS_UI_BAR_H);
-  lv_obj_set_style_pad_all(grid, 14, 0);
-  lv_obj_set_style_pad_gap(grid, 14, 0);
-  lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-  lv_obj_set_scrollable(grid, false);
-
+static void populate() {
+  lv_obj_clean(s_grid);
+  size_t shown = 0;
   for (size_t i = 0; i < slotCount(); i++) {
+    if (!slotAt(i)->enabled) continue;
+    shown++;
     const Manifest& m = *slotAt(i)->m;
-    lv_obj_t* tile = lv_obj_create(grid);
+    lv_obj_t* tile = lv_obj_create(s_grid);
     lv_obj_remove_style_all(tile);
     lv_obj_set_size(tile, 100, 100);
     lv_obj_set_style_bg_color(tile, lv_color_make(0x1C, 0x21, 0x28), 0);
@@ -56,11 +49,30 @@ lv_obj_t* launcherBuild() {
     lv_label_set_text(name, m.name);
     lv_obj_set_style_text_color(name, lv_color_white(), 0);
   }
-
-  if (slotCount() == 0) {
-    lv_obj_t* l = lv_label_create(grid);
-    lv_label_set_text(l, "No apps enabled (menuconfig: OS apps)");
+  if (shown == 0) {
+    lv_obj_t* l = lv_label_create(s_grid);
+    lv_label_set_text(l, "No apps enabled (Settings > Apps)");
   }
+}
+
+void launcherRefresh() {
+  if (s_grid) populate();
+}
+
+lv_obj_t* launcherBuild() {
+  s_screen = lv_obj_create(nullptr);
+  lv_obj_set_style_bg_color(s_screen, lv_color_make(0x0E, 0x11, 0x16), 0);
+  lv_obj_set_scrollable(s_screen, false);
+
+  s_grid = lv_obj_create(s_screen);
+  lv_obj_remove_style_all(s_grid);
+  lv_obj_set_pos(s_grid, 0, OS_UI_BAR_H);
+  lv_obj_set_size(s_grid, OS_UI_W, OS_UI_H - OS_UI_BAR_H);
+  lv_obj_set_style_pad_all(s_grid, 14, 0);
+  lv_obj_set_style_pad_gap(s_grid, 14, 0);
+  lv_obj_set_flex_flow(s_grid, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_scrollable(s_grid, false);
+  populate();
   return s_screen;
 }
 

@@ -40,7 +40,7 @@ CONFIG_LV_FONT_MONTSERRAT_28=y
 
 # Most LVGL allocations go to PSRAM; only tiny ones stay in internal SRAM.
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=128
-CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CUSTOM_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
 
@@ -85,22 +85,13 @@ CONFIG_LWIP_TCP_SND_BUF_DEFAULT=2920
 CONFIG_LWIP_TCP_WND_DEFAULT=2920
 
 # --- bluetooth (svc_ble) ---
-# BLE only (the ESP32-S3 has no Bluetooth Classic). The stack is created on demand by svc_ble.
-CONFIG_BT_ENABLED=y
-CONFIG_BT_NIMBLE_ENABLED=y
-CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
-CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
-CONFIG_BT_NIMBLE_MAX_BONDS=8
-CONFIG_BT_NIMBLE_MAX_CCCDS=2
-CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=64
-CONFIG_BT_NIMBLE_NVS_PERSIST=y
-CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
-CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
-CONFIG_BT_CTRL_BLE_MAX_ACT=3
+# Bluetooth is OFF in the default build (it costs ~20 KB of IRAM plus ~36 KB when active). To
+# build it, add sdkconfig.defaults.ble to SDKCONFIG_DEFAULTS in platformio.ini.
 
 # --- rgb led (svc_led) ---
 
 # --- recorder ---
 
 # --- shade / media ---
+
 

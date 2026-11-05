@@ -21,5 +21,6 @@ class Page {
 Page* makeDisplayPage(std::pmr::memory_resource& m);
 Page* makeWifiPage(std::pmr::memory_resource& m);
 Page* makeBluetoothPage(std::pmr::memory_resource& m);
+Page* makeAppsPage(std::pmr::memory_resource& m);
 
 }  // namespace apps::settings

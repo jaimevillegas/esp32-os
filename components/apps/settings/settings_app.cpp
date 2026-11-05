@@ -27,16 +27,30 @@ class SettingsApp final : public os::App {
   void onStop() override { closePage(); }
 
  private:
+  // `service` tells which system service the page needs; entries whose service is not part of
+  // this build (for example Bluetooth) are not shown.
+  enum Service : uint8_t { kNone, kNet, kBle };
   struct Entry {
     const char* glyph;
     const char* name;
     Page* (*make)(std::pmr::memory_resource&);
+    Service service;
   };
-  static constexpr Entry kEntries[3] = {
-      {LV_SYMBOL_IMAGE, "Display", makeDisplayPage},
-      {LV_SYMBOL_WIFI, "Wi-Fi", makeWifiPage},
-      {LV_SYMBOL_BLUETOOTH, "Bluetooth", makeBluetoothPage},
+  static constexpr size_t kCount = 4;
+  static constexpr Entry kEntries[kCount] = {
+      {LV_SYMBOL_IMAGE, "Display", makeDisplayPage, kNone},
+      {LV_SYMBOL_WIFI, "Wi-Fi", makeWifiPage, kNet},
+      {LV_SYMBOL_BLUETOOTH, "Bluetooth", makeBluetoothPage, kBle},
+      {LV_SYMBOL_LIST, "Apps", makeAppsPage, kNone},
   };
+
+  bool available(size_t i) {
+    switch (kEntries[i].service) {
+      case kNet: return ctx_->net() != nullptr;
+      case kBle: return ctx_->ble() != nullptr;
+      default: return true;
+    }
+  }
 
   void clearRoot() {
     closePage();
@@ -55,10 +69,11 @@ class SettingsApp final : public os::App {
     clearRoot();
     lv_obj_set_flex_flow(root_, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(root_, 8, 0);
-    for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < kCount; i++) {
+      if (!available(i)) continue;
       lv_obj_t* row = lv_obj_create(root_);
       lv_obj_remove_style_all(row);
-      lv_obj_set_size(row, lv_pct(100), 52);
+      lv_obj_set_size(row, lv_pct(100), 48);
       lv_obj_set_style_bg_color(row, lv_color_make(0x1C, 0x21, 0x28), 0);
       lv_obj_set_style_bg_color(row, lv_color_make(0x2A, 0x32, 0x3D), LV_STATE_PRESSED);
       lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
@@ -133,7 +148,7 @@ class SettingsApp final : public os::App {
   uint32_t opens_ = 0;
 };
 
-constexpr SettingsApp::Entry SettingsApp::kEntries[3];
+constexpr SettingsApp::Entry SettingsApp::kEntries[SettingsApp::kCount];
 
 extern const os::Manifest kManifest;
 const os::Manifest kManifest = {

@@ -48,7 +48,7 @@ static void svc_task(void*) {
 void startServices() {
   for (size_t i = 0; i < slotCount(); i++) {
     Slot& s = *slotAt(i);
-    if (!s.m->background || !s.m->make_service) continue;
+    if (!s.m->background || !s.m->make_service || !s.enabled) continue;
     if (!ensureArena(s)) continue;
     s.svc = s.m->make_service(s.arena);
     s.svc->onCreate(*s.ctx);

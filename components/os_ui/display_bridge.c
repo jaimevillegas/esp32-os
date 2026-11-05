@@ -284,7 +284,7 @@ static esp_err_t ui_start(void (*screen_cb)(void), const os_ui_shell_cfg_t *shel
         (screen_cb ? screen_cb : os_ui_test_screen)();
     }
 
-    xTaskCreatePinnedToCore(ui_task, "ui", 12288, NULL, 4, &s_ui_task, 1);
+    xTaskCreatePinnedToCore(ui_task, "ui", 10240, NULL, 4, &s_ui_task, 1);
 #ifdef CONFIG_OS_UI_BUF_PSRAM
     const char *where = "PSRAM";
 #else

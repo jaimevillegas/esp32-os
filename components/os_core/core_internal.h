@@ -75,6 +75,7 @@ struct Slot {
   Context* ctx = nullptr;
   uint32_t next_tick = 0;
   bool tick_pending = false;
+  bool enabled = true;           // false = hidden from the launcher, service not started
 };
 
 void managerInit();
@@ -84,6 +85,7 @@ bool ensureArena(Slot& s);
 void launch(size_t idx);
 void closeForeground();
 void closeForegroundAsync();
+void setAppEnabledById(const char* id, bool enabled);   // persists, refreshes the launcher
 Slot* foreground();
 
 // ---- feature glue (one file each, owned by the feature) -----------------------------------
@@ -104,6 +106,7 @@ void requestSleep();             // sleep_glue.cpp:   any task; performs the sle
 // ---- launcher / services ----------------------------------------------------------------
 lv_obj_t* launcherBuild();       // creates the home screen, returns it
 lv_obj_t* launcherScreen();
+void launcherRefresh();          // rebuilds the tiles (after an app was enabled/disabled)
 void startServices();            // creates services of background apps and the svc task
 
 }  // namespace os::core

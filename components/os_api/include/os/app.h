@@ -73,6 +73,15 @@ class Bus {
 };
 
 // Device facilities that do not need a permission.
+struct AppInfo {
+  char        id[16];
+  char        name[24];
+  const char* glyph;
+  bool        enabled;
+  bool        can_disable;     // Settings itself cannot be disabled
+  bool        background;      // has a Service (stops after a restart when disabled)
+};
+
 class Device {
  public:
   virtual ~Device() = default;
@@ -82,6 +91,11 @@ class Device {
   virtual PowerInfo power() const = 0;
   virtual uint32_t nowMs() const = 0;
   virtual void requestClose() = 0;             // closes the calling app (deferred)
+  virtual int  appCount() const = 0;
+  virtual bool appInfo(int index, AppInfo& out) const = 0;
+  // Persisted. A disabled app disappears from the launcher at once; its background Service is
+  // not started at the next boot.
+  virtual void setAppEnabled(const char* id, bool enabled) = 0;
   virtual void sleep() = 0;                    // light sleep until the BOOT button is pressed (deferred)
 };
 

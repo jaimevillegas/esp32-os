@@ -1,3 +1,5 @@
+#include "sdkconfig.h"
+#if CONFIG_BT_ENABLED
 // Glue between svc_ble and the framework (Ble for apps, Topic::Ble events, status bar icon).
 //
 // Topic::Ble payload: bits 0-7 BleState, bit 8 = a scan finished. Published on every state
@@ -68,3 +70,16 @@ void bleStart() {
 }
 
 }  // namespace os::core
+
+#else  // Bluetooth is not part of this build: no Ble service, Settings hides the page.
+
+#include "core_internal.h"
+
+namespace os::core {
+
+Ble* bleService() { return nullptr; }
+void bleStart() {}
+
+}  // namespace os::core
+
+#endif  // CONFIG_BT_ENABLED

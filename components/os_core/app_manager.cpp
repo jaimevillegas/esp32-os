@@ -24,6 +24,40 @@ size_t slotCount() { return s_count; }
 Slot* slotAt(size_t idx) { return idx < s_count ? &s_slots[idx] : nullptr; }
 Slot* foreground() { return s_fg; }
 
+// Disabled apps are stored as a comma separated list of ids in the system settings.
+static void loadDisabled() {
+  char buf[96];
+  if (!systemKv().getStr("disabled", buf, sizeof buf)) return;
+  char* save = nullptr;
+  for (char* tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(nullptr, ",", &save)) {
+    for (size_t i = 0; i < s_count; i++) {
+      if (!strcmp(s_slots[i].m->id, tok) && strcmp(tok, "settings") != 0) s_slots[i].enabled = false;
+    }
+  }
+}
+
+static void saveDisabled() {
+  char buf[96] = "";
+  for (size_t i = 0; i < s_count; i++) {
+    if (s_slots[i].enabled) continue;
+    if (buf[0]) strlcat(buf, ",", sizeof buf);
+    strlcat(buf, s_slots[i].m->id, sizeof buf);
+  }
+  systemKv().setStr("disabled", buf);
+}
+
+void setAppEnabledById(const char* id, bool enabled) {
+  if (!strcmp(id, "settings")) return;
+  for (size_t i = 0; i < s_count; i++) {
+    Slot& s = s_slots[i];
+    if (strcmp(s.m->id, id) != 0 || s.enabled == enabled || s_fg == &s) continue;
+    s.enabled = enabled;
+    saveDisabled();
+    launcherRefresh();
+    ESP_LOGI(TAG, "%s %s", id, enabled ? "enabled" : "disabled (service stops after a restart)");
+  }
+}
+
 void managerInit() {
   s_count = appCount();
   s_slots = new Slot[s_count ? s_count : 1];
@@ -35,6 +69,7 @@ void managerInit() {
     snprintf(ns, sizeof ns, "a.%.12s", s.m->id);
     s.kv.configure("nvs_app", ns);
   }
+  loadDisabled();
 }
 
 // The arena of an app with a background Service lives for the whole uptime; the others only
@@ -54,7 +89,7 @@ bool ensureArena(Slot& s) {
 
 void launch(size_t idx) {
   Slot* s = slotAt(idx);
-  if (!s || s_fg) return;
+  if (!s || s_fg || !s->enabled) return;
   if (!ensureArena(*s)) return;
 
   s_int_before = (long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
