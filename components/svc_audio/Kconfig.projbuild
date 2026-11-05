@@ -5,3 +5,22 @@ config SVC_AUDIO_BOOT_BEEP
     default n
 
 endmenu
+
+menu "Voice recorder"
+
+config SVC_REC_MIC_PGA
+    int "ES8311 analog mic PGA gain (register 0x14 bits 3:0, 0..10 = 0..30 dB)"
+    range 0 10
+    default 10
+
+config SVC_REC_ADC_SCALE
+    int "ES8311 ADC gain scale-up (register 0x16 bits 2:0, 0..7 = 0..42 dB in 6 dB steps)"
+    range 0 7
+    default 4
+
+config SVC_REC_ADC_VOLUME
+    hex "ES8311 ADC digital volume (register 0x17, 0xBF = 0 dB, 0.5 dB per step)"
+    range 0x00 0xFF
+    default 0xBF
+
+endmenu

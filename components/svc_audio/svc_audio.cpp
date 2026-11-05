@@ -27,6 +27,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "mp3dec.h"
+#include "svc_audio_priv.h"
 
 static const char *TAG = "audio";
 
@@ -85,6 +86,8 @@ static i2s_chan_handle_t g_tx;
 static volatile bool g_hw_ready;
 static uint32_t g_hw_rate;
 static volatile bool g_hold_req, g_hold_ack;
+static volatile bool g_audio_busy;          // the audio task is inside runTrack()
+static volatile bool g_capture;             // the recorder owns the I2S port
 
 // ---- small helpers ----------------------------------------------------------------------
 static inline uint32_t nowMs() { return (uint32_t)(esp_timer_get_time() / 1000); }
@@ -649,9 +652,11 @@ static void audioTask(void *) {
             g_cmd_play = false;
             gen = g_play_gen;
             memcpy(path, g_path, sizeof path);
+            if (go) g_audio_busy = true;           // set under the lock: capture_acquire() waits on it
             xSemaphoreGive(g_mu);
             if (!go) break;
             runTrack(path, gen);
+            g_audio_busy = false;
         }
     }
 }
@@ -695,6 +700,10 @@ extern "C" void svc_audio_init(svc_audio_event_cb_t cb, uint8_t volume) {
 extern "C" bool svc_audio_play(const char *path) {
     if (!path || !*path || strlen(path) >= sizeof g_path) return false;
     xSemaphoreTake(g_mu, portMAX_DELAY);
+    if (g_capture) {                               // the microphone owns the I2S port
+        xSemaphoreGive(g_mu);
+        return false;
+    }
     if (!startLocked()) {
         xSemaphoreGive(g_mu);
         return false;
@@ -755,6 +764,61 @@ extern "C" void svc_audio_stop(void) {
     xSemaphoreGive(g_mu);
     if (g_started) ringFlush();
     notify(ch, false);
+}
+
+// ---- hand-over to the recorder ------------------------------------------------------------
+extern "C" bool svc_audio_capture_acquire(void) {
+    if (!g_mu) return false;
+    xSemaphoreTake(g_mu, portMAX_DELAY);
+    if (g_capture) {
+        xSemaphoreGive(g_mu);
+        return false;
+    }
+    g_capture = true;                              // from now on play() is refused
+    g_play_gen = g_play_gen + 1;
+    g_cmd_play = false;
+    g_paused = false;
+    g_seek_req = false;
+    g_start_ms = 0;
+    g_st.pos_ms = 0;
+    const bool ch = setStateLocked(SVC_AUDIO_STOPPED);
+    const bool started = g_started;
+    xSemaphoreGive(g_mu);
+
+    bool ok = true;
+    if (started) {
+        ringFlush();
+        for (int i = 0; i < 150 && g_audio_busy; i++) vTaskDelay(pdMS_TO_TICKS(10));
+        if (g_audio_busy) {
+            ok = false;
+        } else {
+            g_hold_ack = false;
+            g_hold_req = true;                     // parks aout: PA off, TX disabled
+            for (int i = 0; i < 100 && !g_hold_ack; i++) vTaskDelay(pdMS_TO_TICKS(2));
+            ok = g_hold_ack;
+        }
+    }
+    if (ok) {
+        g_hw_ready = false;
+        if (g_tx) {                                // the recorder builds its own RX channel
+            i2s_channel_disable(g_tx);             // harmless error if already disabled
+            i2s_del_channel(g_tx);
+            g_tx = nullptr;
+        }
+        g_hw_rate = 0;
+    } else {
+        ESP_LOGW(TAG, "audio engine did not go idle for the recorder");
+        g_hold_req = false;
+        g_capture = false;
+    }
+    pa(false);
+    notify(ch, false);
+    return ok;
+}
+
+extern "C" void svc_audio_capture_release(void) {
+    g_hold_req = false;
+    g_capture = false;
 }
 
 extern "C" bool svc_audio_seek(uint32_t ms) {
