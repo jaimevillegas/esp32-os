@@ -191,6 +191,11 @@ void MusicService::checkEngine() {
 }
 
 void MusicService::onEvent(const os::Msg& m) {
+  if (m.topic == os::Topic::Media) {          // transport request from the shade (1 = prev, 2 = next)
+    if (m.arg == 1) prev();                    // both ignore an empty playlist and take the lock
+    else if (m.arg == 2) next();
+    return;
+  }
   std::lock_guard<std::mutex> lk(mu_);
   if (m.topic == os::Topic::Audio) {
     version_++;

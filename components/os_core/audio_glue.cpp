@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "freertos/FreeRTOS.h"
 #include "esp_timer.h"
+#include "os_ui.h"
 #include "svc_audio.h"
 
 namespace os::core {
@@ -62,6 +63,38 @@ class AudioImpl final : public Audio {
 static AudioImpl s_audio;
 static bool s_started;
 
+// ---- shade media card provider (os_ui calls these from the ui task) ----------------------------
+
+static void shadeGet(os_ui_media_t* out) {
+  svc_audio_status_t st;
+  svc_audio_get_status(&st);
+  out->active = st.state == SVC_AUDIO_PLAYING || st.state == SVC_AUDIO_PAUSED;
+  out->playing = st.state == SVC_AUDIO_PLAYING;
+  __builtin_memcpy(out->title, st.title, sizeof out->title);
+  out->title[sizeof out->title - 1] = 0;
+  out->pos_ms = st.pos_ms;
+  out->dur_ms = st.dur_ms;
+  out->volume = st.volume;
+}
+
+static void shadeToggle() {
+  svc_audio_status_t st;
+  svc_audio_get_status(&st);
+  if (st.state == SVC_AUDIO_PLAYING) svc_audio_pause();
+  else if (st.state == SVC_AUDIO_PAUSED) svc_audio_resume();
+}
+
+// The playlist lives in the Music app's background service, so prev / next go over the bus.
+static void shadeMedia(uint32_t arg) {
+  Msg m{};
+  m.topic = Topic::Media;
+  m.arg = arg;
+  bus().publish(m);
+}
+static void shadePrev() { shadeMedia(1); }
+static void shadeNext() { shadeMedia(2); }
+static void shadeSetVolume(uint8_t pct) { s_audio.setVolume(pct); }
+
 Audio* audioService() { return s_started ? &s_audio : nullptr; }
 
 #ifdef CONFIG_SVC_AUDIO_BOOT_BEEP
@@ -81,6 +114,8 @@ void audioStart() {
   const esp_timer_create_args_t args = {.callback = onPersist, .name = "vol_save"};
   esp_timer_create(&args, &s_persist_timer);
   s_started = true;
+  static const os_ui_media_cfg_t kShadeMedia = {shadeGet, shadePrev, shadeToggle, shadeNext, shadeSetVolume};
+  os_ui_set_media_provider(&kShadeMedia);
 #ifdef CONFIG_SVC_AUDIO_BOOT_BEEP
   xTaskCreate(bootBeepTask, "beep", 3072, nullptr, 3, nullptr);
 #endif

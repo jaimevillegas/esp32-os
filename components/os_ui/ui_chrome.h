@@ -5,7 +5,8 @@
 #include "os_ui.h"
 
 #define UI_BAR_H     OS_UI_BAR_H
-#define UI_SHADE_H   240
+// Maximum shade height (brightness + media card + Sleep); the real height depends on the content.
+#define UI_SHADE_H   270
 
 void ui_status_bar_create(void);
 void ui_shade_create(void);
