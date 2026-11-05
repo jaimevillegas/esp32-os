@@ -1,0 +1,7 @@
+menu "OS core"
+
+config OS_DEBUG_RADIOS
+    bool "Turn Wi-Fi and BLE on at boot and log the heap (memory measurements)"
+    default n
+
+endmenu

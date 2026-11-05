@@ -5,6 +5,10 @@
 #include "nvs_flash.h"
 #include "os_power.h"
 #include "os_ui.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "sdkconfig.h"
 
 using namespace os;
 using namespace os::core;
@@ -31,6 +35,34 @@ static void onPowerChange(const os_power_state_t* st) {
 
 static void buildHome() { lv_screen_load(launcherBuild()); }
 
+#ifdef CONFIG_OS_DEBUG_RADIOS
+// Bring-up measurement aid: turns both radios on at boot and logs the internal heap.
+static void logHeap(const char* phase) {
+  ESP_LOGW("RADIOS", "%-12s internal free=%u min=%u largest=%u", phase,
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+           (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+}
+static void debugRadiosTask(void*) {
+  vTaskDelay(pdMS_TO_TICKS(4000));
+  if (netService()) netService()->setEnabled(false);     // flags are persisted: start from "off"
+  if (bleService()) bleService()->setEnabled(false);
+  vTaskDelay(pdMS_TO_TICKS(4000));
+  logHeap("radios-off");
+  if (netService()) netService()->setEnabled(true);
+  vTaskDelay(pdMS_TO_TICKS(8000));
+  logHeap("wifi-on");
+  if (bleService()) bleService()->setEnabled(true);
+  vTaskDelay(pdMS_TO_TICKS(8000));
+  logHeap("wifi+ble-on");
+  vTaskDelay(pdMS_TO_TICKS(8000));
+  logHeap("settled");
+  if (netService()) netService()->setEnabled(false);     // leave the device with radios off
+  if (bleService()) bleService()->setEnabled(false);
+  vTaskDelete(nullptr);
+}
+#endif
+
 extern "C" void os_core_start(void) {
   initNvs("nvs");
   initNvs("nvs_app");
@@ -54,4 +86,7 @@ extern "C" void os_core_start(void) {
   os_ui_shell_cfg_t cfg = {.first_screen = buildHome, .tick_hook = busPumpUi};
   ESP_ERROR_CHECK(os_ui_start_shell(&cfg));
   ESP_LOGI(TAG, "up: %u apps", (unsigned)slotCount());
+#ifdef CONFIG_OS_DEBUG_RADIOS
+  xTaskCreate(debugRadiosTask, "dbg_radio", 3072, nullptr, 3, nullptr);
+#endif
 }
