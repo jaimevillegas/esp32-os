@@ -59,6 +59,28 @@ void os_ui_set_bt(int state);
 // Status bar title. With a `back_cb` the title shows a back chevron and is tappable.
 void os_ui_set_title(const char *name, void (*back_cb)(void));
 
+// Media card of the pull-down shade. os_ui does not know the audio engine: the owner of the
+// engine registers these callbacks (all run in the ui task). `get` is polled (~4 Hz) only
+// while the shade is visible; the card is shown when `active` (playing or paused).
+typedef struct {
+    bool active;
+    bool playing;
+    char title[64];
+    uint32_t pos_ms, dur_ms;     // dur_ms 0 = unknown
+    uint8_t volume;              // 0..100
+} os_ui_media_t;
+
+typedef struct {
+    void (*get)(os_ui_media_t *out);
+    void (*prev)(void);
+    void (*toggle)(void);        // pause / resume
+    void (*next)(void);
+    void (*set_volume)(uint8_t pct);
+} os_ui_media_cfg_t;
+
+// Registers the provider (the struct is copied). NULL removes it and hides the card.
+void os_ui_set_media_provider(const os_ui_media_cfg_t *cfg);
+
 #ifdef __cplusplus
 }
 #endif
