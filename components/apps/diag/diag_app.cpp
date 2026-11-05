@@ -346,7 +346,9 @@ class DiagApp final : public os::App {
     } else {
       setRow(bat_, "Battery", "--", -1, kGreen);
     }
-    snprintf(a, sizeof a, "%s%s", pw.usb ? "USB" : "On battery", pw.charging ? " + charging" : "");
+    // Mode and the measured range of the last minute (reveals ADC noise / load sag).
+    snprintf(a, sizeof a, "%s %u.%02u-%u.%02uV", pw.usb ? (pw.charging ? "USB+chg" : "USB") : "Bat",
+             pw.vmin_mv / 1000, pw.vmin_mv % 1000 / 10, pw.vmax_mv / 1000, pw.vmax_mv % 1000 / 10);
     batState_.set(a);
 
     // CPU load per core

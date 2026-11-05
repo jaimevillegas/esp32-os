@@ -122,23 +122,53 @@ static void bench_flush(void)
 
 static uint32_t tick_cb(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
+// The controller sometimes reports one extra "touched" sample right after the finger lifted
+// (measured: a 16 ms ghost press at the same position, 17-33 ms after the release), which turned
+// every tap into a double click. A press is therefore only reported after two consecutive touched
+// reads, and new presses are ignored for a short time after a release.
+#define TOUCH_CONFIRM_READS 2
+#define TOUCH_LOCKOUT_US    60000
+
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
     static int32_t lx, ly;
+    static int run;                     /* consecutive reads with a finger on the glass */
+    static bool reported;               /* PRESSED currently reported to LVGL */
+    static int64_t t_release;
+#ifdef CONFIG_OS_UI_TOUCH_DEBUG
+    static bool prev_pressed;
+    static int64_t t_prev;
+#endif
     bsp_touch_point_t p;
+    const int64_t now = esp_timer_get_time();
     if (bsp_touch_read(&p, 1) > 0) {
-        ESP_LOGD(TAG, "touch raw x=%u y=%u", p.x, p.y);
         int32_t x = ((int32_t)p.x - TOUCH_RAW_X_MIN) * (BSP_LCD_NATIVE_W - 1) / (TOUCH_RAW_X_MAX - TOUCH_RAW_X_MIN);
         int32_t y = ((int32_t)p.y - TOUCH_RAW_Y_MIN) * (BSP_LCD_NATIVE_H - 1) / (TOUCH_RAW_Y_MAX - TOUCH_RAW_Y_MIN);
-        x = LV_CLAMP(0, x, BSP_LCD_NATIVE_W - 1);
-        y = LV_CLAMP(0, y, BSP_LCD_NATIVE_H - 1);
-        lx = x; ly = y;
-        data->state = LV_INDEV_STATE_PRESSED;
+        lx = LV_CLAMP(0, x, BSP_LCD_NATIVE_W - 1);
+        ly = LV_CLAMP(0, y, BSP_LCD_NATIVE_H - 1);
+        if (run < 1000) run++;
     } else {
-        data->state = LV_INDEV_STATE_RELEASED;
+        run = 0;
     }
+    if (reported) {
+        if (run == 0) {
+            reported = false;
+            t_release = now;
+        }
+    } else if (run >= TOUCH_CONFIRM_READS && now - t_release > TOUCH_LOCKOUT_US) {
+        reported = true;
+    }
+    data->state = reported ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
     data->point.x = lx;
     data->point.y = ly;
+#ifdef CONFIG_OS_UI_TOUCH_DEBUG
+    if (reported != prev_pressed) {
+        ESP_LOGW("TOUCH", "%s at %d,%d  (+%d ms)", reported ? "PRESS  " : "RELEASE", (int)lx, (int)ly,
+                 (int)((now - t_prev) / 1000));
+        t_prev = now;
+        prev_pressed = reported;
+    }
+#endif
 }
 
 void os_ui_wake(void)

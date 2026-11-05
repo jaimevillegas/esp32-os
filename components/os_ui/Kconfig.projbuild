@@ -26,4 +26,8 @@ config OS_UI_FLUSH_BENCH
     bool "Run a full-screen flush benchmark at start-up"
     default n
 
+config OS_UI_TOUCH_DEBUG
+    bool "Log touch press/release transitions with timestamps"
+    default n
+
 endmenu

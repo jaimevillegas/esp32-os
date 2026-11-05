@@ -91,7 +91,11 @@ CONFIG_LWIP_TCP_WND_DEFAULT=2920
 # --- rgb led (svc_led) ---
 
 # --- recorder ---
+# Microphone gain: ADC scale-up 4 -> 6 (+12 dB) and ADC volume 0 dB -> +4.5 dB (vendor demo value).
+CONFIG_SVC_REC_ADC_SCALE=6
+CONFIG_SVC_REC_ADC_VOLUME=0xC8
 
 # --- shade / media ---
+
 
 

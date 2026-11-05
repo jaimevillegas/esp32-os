@@ -444,17 +444,24 @@ class WifiPage final : public Page {
     lv_textarea_set_placeholder_text(ta_, "Password (min 8 characters)");
     lv_textarea_set_password_mode(ta_, true);
     lv_obj_set_style_text_font(ta_, &lv_font_montserrat_20, 0);
-    lv_obj_set_size(ta_, W - 48, 40);
+    lv_obj_set_size(ta_, W - 48, 44);
     lv_obj_set_pos(ta_, 0, 42);
+    // The default padding leaves less height than one line of the 20 px font, which made the
+    // text scroll vertically. Keep the box tall enough and allow horizontal scrolling only.
+    lv_obj_set_style_pad_ver(ta_, 9, 0);
+    lv_obj_set_scrollbar_mode(ta_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_scroll_dir(ta_, LV_DIR_HOR);
     lv_obj_add_state(ta_, LV_STATE_FOCUSED);
     lv_obj_add_event_cb(ta_, onOvText, LV_EVENT_VALUE_CHANGED, this);
-    eyeBtn_ = makeButton(form_, 44, 40, LV_SYMBOL_EYE_CLOSE, lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
+    eyeBtn_ = makeButton(form_, 44, 44, LV_SYMBOL_EYE_CLOSE, lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
                          onOvEye, this);
     lv_obj_set_pos(eyeBtn_, W - 44, 42);
 
     kb_ = lv_keyboard_create(form_);
-    lv_obj_set_size(kb_, W, H - 88);
-    lv_obj_set_pos(kb_, 0, 88);
+    // lv_keyboard_create() aligns the keyboard to the bottom; set_pos would add to that offset
+    // and push it off the area (only two rows were visible). Align to the top-left instead.
+    lv_obj_set_size(kb_, W, H - 92);
+    lv_obj_align(kb_, LV_ALIGN_TOP_LEFT, 0, 92);
     lv_keyboard_set_mode(kb_, LV_KEYBOARD_MODE_TEXT_LOWER);
     lv_keyboard_set_textarea(kb_, ta_);
     lv_obj_add_event_cb(kb_, onOvKb, LV_EVENT_READY, this);

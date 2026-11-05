@@ -12,6 +12,10 @@ typedef struct {
     uint8_t  percent;     // 0..100, from an open-circuit LiPo curve (inflated while charging)
     bool     usb;         // connected to a host computer (not a plain charger)
     bool     charging;    // inferred: no CHRG pin is wired to the MCU
+    uint16_t vraw_mv;     // last measurement before filtering
+    uint16_t vmin_mv;     // lowest / highest measurement of the last ~60 s
+    uint16_t vmax_mv;
+    uint16_t noise_mv;    // spread of the ADC samples inside one measurement
 } os_power_state_t;
 
 // Starts the `pwr` task, which samples every 2 s.

@@ -147,7 +147,7 @@ class DeviceImpl final : public Device {
 
   PowerInfo power() const override {
     os_power_state_t s = os_power_get();
-    return PowerInfo{s.vbat_mv, s.percent, s.usb, s.charging};
+    return PowerInfo{s.vbat_mv, s.percent, s.usb, s.charging, s.vraw_mv, s.vmin_mv, s.vmax_mv, s.noise_mv};
   }
 
   uint32_t nowMs() const override { return (uint32_t)(esp_timer_get_time() / 1000); }

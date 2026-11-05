@@ -29,25 +29,41 @@ esp_err_t bsp_battery_init(void)
     return ESP_OK;
 }
 
-uint32_t bsp_battery_read_mv(void)
+// The divider (100k/100k) gives the ADC a 50k source impedance, far above the ~10k it likes, so single
+// conversions are noisy. Take many, sort, drop the extreme quarter on each side and average the
+// rest. `noise_mv` is the spread of the kept samples (battery side), a quality indicator.
+#define BAT_SAMPLES 64
+
+uint32_t bsp_battery_read_stats(uint32_t *noise_mv)
 {
-    int mv[SAMPLES];
+    int raw[BAT_SAMPLES];
     int n = 0;
-    for (int i = 0; i < SAMPLES; i++) {
-        int raw, v;
-        if (adc_oneshot_read(s_adc, BAT_CHANNEL, &raw) == ESP_OK &&
-            adc_cali_raw_to_voltage(s_cali, raw, &v) == ESP_OK) {
-            mv[n++] = v;
-        }
+    for (int i = 0; i < BAT_SAMPLES; i++) {
+        int r;
+        if (adc_oneshot_read(s_adc, BAT_CHANNEL, &r) == ESP_OK) raw[n++] = r;
     }
-    if (n == 0) return 0;
-    for (int i = 1; i < n; i++) {               // insertion sort, n <= 8
-        int k = mv[i], j = i - 1;
-        while (j >= 0 && mv[j] > k) { mv[j + 1] = mv[j]; j--; }
-        mv[j + 1] = k;
+    if (n < 8) {
+        if (noise_mv) *noise_mv = 0;
+        return 0;
     }
-    return (uint32_t)mv[n / 2] * BSP_BAT_DIVIDER;
+    for (int i = 1; i < n; i++) {               // insertion sort
+        int k = raw[i], j = i - 1;
+        while (j >= 0 && raw[j] > k) { raw[j + 1] = raw[j]; j--; }
+        raw[j + 1] = k;
+    }
+    const int lo = n / 4, hi = n - n / 4;       // keep the middle half
+    long sum = 0;
+    for (int i = lo; i < hi; i++) sum += raw[i];
+    const int avg = (int)(sum / (hi - lo));
+    int v = 0, vlo = 0, vhi = 0;
+    adc_cali_raw_to_voltage(s_cali, avg, &v);
+    adc_cali_raw_to_voltage(s_cali, raw[lo], &vlo);
+    adc_cali_raw_to_voltage(s_cali, raw[hi - 1], &vhi);
+    if (noise_mv) *noise_mv = (uint32_t)(vhi - vlo) * BSP_BAT_DIVIDER;
+    return (uint32_t)v * BSP_BAT_DIVIDER;
 }
+
+uint32_t bsp_battery_read_mv(void) { return bsp_battery_read_stats(NULL); }
 
 bool bsp_usb_host_connected(void)
 {

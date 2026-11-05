@@ -82,6 +82,8 @@ int bsp_touch_read(bsp_touch_point_t *pts, int max_pts);
 esp_err_t bsp_battery_init(void);
 // Median of 8 calibrated samples, already multiplied by the divider (millivolts).
 uint32_t bsp_battery_read_mv(void);
+// Same, also returning the spread of the kept samples (millivolts at the battery).
+uint32_t bsp_battery_read_stats(uint32_t *noise_mv);
 // True while the ESP32-S3 USB-Serial-JTAG port sees SOF packets from a host computer.
 // A plain charger or power bank is NOT reported as connected.
 bool bsp_usb_host_connected(void);

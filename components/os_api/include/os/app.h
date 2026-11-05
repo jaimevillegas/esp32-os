@@ -53,6 +53,10 @@ struct PowerInfo {
   uint8_t  percent;
   bool     usb;              // connected to a host computer
   bool     charging;         // inferred
+  uint16_t vraw_mv;          // measurement before filtering
+  uint16_t vmin_mv;          // lowest / highest measurement of the last ~60 s
+  uint16_t vmax_mv;
+  uint16_t noise_mv;         // ADC spread inside one measurement
 };
 
 // Persistent key-value store, one namespace per app (NVS).
