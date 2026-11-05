@@ -1,6 +1,7 @@
 #include "codec_es8311.h"
 
 #include "esp_log.h"
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -86,3 +87,18 @@ esp_err_t codec_es8311_init(i2c_master_bus_handle_t bus) {
 }
 
 esp_err_t codec_es8311_set_dac_volume(uint8_t reg) { return wr(0x32, reg); }
+
+// Microphone path, from the vendor echo demo (Example_17_echo, es8311_microphone_config):
+//   reg 0x14 = 0x1A  analog mic input selected (bit 6 = 0: no digital/PDM mic), PGA gain 0x0A
+//   reg 0x17 = ADC digital volume (vendor 0xC8; default here 0xBF = 0 dB)
+//   reg 0x16 = ADC gain scale-up (the init sequence leaves 0x24 = scale 4)
+// Registers 0x0D/0x0E (analog + PGA + ADC modulator power-up), 0x15 (ADC ramp), 0x1B/0x1C (ADC
+// high-pass, EQ bypass) and the I2S output format (0x0A) are already set by codec_es8311_init().
+esp_err_t codec_es8311_enable_capture(void) {
+    esp_err_t e = ESP_OK;
+    e |= wr(0x0E, 0x02);
+    e |= wr(0x14, (uint8_t)(0x10 | (CONFIG_SVC_REC_MIC_PGA & 0x0F)));   // 0x1A at the default
+    e |= wr(0x16, (uint8_t)(0x20 | (CONFIG_SVC_REC_ADC_SCALE & 0x07)));
+    e |= wr(0x17, (uint8_t)CONFIG_SVC_REC_ADC_VOLUME);
+    return e;
+}

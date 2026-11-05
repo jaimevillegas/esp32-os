@@ -8,3 +8,6 @@
 esp_err_t codec_es8311_init(i2c_master_bus_handle_t bus);
 // Raw DAC volume register: 0x00 = -95.5 dB ... 0xBF = 0 dB (0.5 dB steps).
 esp_err_t codec_es8311_set_dac_volume(uint8_t reg);
+// Programs the microphone path (analog mic, PGA, ADC gain/volume, no digital mic). Call after
+// codec_es8311_init() with MCLK and the I2S clocks running.
+esp_err_t codec_es8311_enable_capture(void);
