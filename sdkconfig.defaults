@@ -57,3 +57,13 @@ CONFIG_FATFS_CODEPAGE_437=y
 # --- diagnostics UI ---
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+
+# --- wifi (svc_net) ---
+
+# --- bluetooth (svc_ble) ---
+
+# --- rgb led (svc_led) ---
+
+# --- recorder ---
+
+# --- shade / media ---

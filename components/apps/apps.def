@@ -6,6 +6,12 @@ OS_APP(files, apps::files)
 #if CONFIG_OS_APP_MUSIC
 OS_APP(music, apps::music)
 #endif
+#if CONFIG_OS_APP_RECORDER
+OS_APP(recorder, apps::recorder)
+#endif
+#if CONFIG_OS_APP_LED
+OS_APP(led, apps::led)
+#endif
 #if CONFIG_OS_APP_SETTINGS
 OS_APP(settings, apps::settings)
 #endif

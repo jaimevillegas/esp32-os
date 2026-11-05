@@ -1,6 +1,6 @@
 # Apps depend ONLY on os_api (which brings LVGL). Never on ESP-IDF components.
 set(srcs "")
-foreach(app SETTINGS DIAG FILES MUSIC)
+foreach(app SETTINGS DIAG FILES MUSIC LED RECORDER)
   if(CONFIG_OS_APP_${app})
     string(TOLOWER ${app} dir)
     file(GLOB app_srcs "${dir}/*.cpp")

@@ -46,7 +46,9 @@ bool ensureArena(Slot& s) {
     return false;
   }
   s.ctx = new (s.arena.allocate(sizeof(Context), alignof(Context)))
-      Context(bus(), s.kv, device(), s.arena, s.m->perms, fsService(), audioService());
+      Context(bus(), s.kv, device(), s.arena, s.m->perms,
+              Services{fsService(), audioService(), netService(), bleService(), ledService(),
+                       recorderService()});
   return true;
 }
 

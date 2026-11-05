@@ -3,7 +3,9 @@
 #include "os_ui.h"
 #include "ui_chrome.h"
 
-static lv_obj_t *s_sd, *s_usb, *s_charge, *s_bat, *s_pct;
+static lv_obj_t *s_bt, *s_wifi, *s_sd, *s_usb, *s_charge, *s_bat, *s_pct;
+static volatile int s_wifi_level = -1, s_bt_state;
+static int s_wifi_shown = -2, s_bt_shown = -1;
 static volatile bool s_sd_present;
 static bool s_sd_shown;
 static lv_obj_t *s_title_btn, *s_title_back, *s_title_name;
@@ -21,9 +23,30 @@ static const char *battery_glyph(uint8_t pct)
 }
 
 void os_ui_set_sd_present(bool present) { s_sd_present = present; }
+void os_ui_set_wifi(int level) { s_wifi_level = level; }
+void os_ui_set_bt(int state) { s_bt_state = state; }
+
+static void refresh_radios(void)
+{
+    const int w = s_wifi_level;
+    if (w != s_wifi_shown) {
+        s_wifi_shown = w;
+        lv_obj_set_hidden(s_wifi, w < 0);
+        lv_obj_set_style_text_color(s_wifi, w <= 0 ? lv_palette_main(LV_PALETTE_GREY)
+                                    : w == 1 ? lv_palette_main(LV_PALETTE_ORANGE) : lv_color_white(), 0);
+    }
+    const int b = s_bt_state;
+    if (b != s_bt_shown) {
+        s_bt_shown = b;
+        lv_obj_set_hidden(s_bt, b <= 0);
+        lv_obj_set_style_text_color(s_bt, b >= 2 ? lv_palette_main(LV_PALETTE_LIGHT_BLUE)
+                                                  : lv_palette_main(LV_PALETTE_GREY), 0);
+    }
+}
 
 static void refresh(lv_timer_t *t)
 {
+    refresh_radios();
     if (s_sd_present != s_sd_shown) {
         s_sd_shown = s_sd_present;
         lv_obj_set_hidden(s_sd, !s_sd_shown);
@@ -111,6 +134,12 @@ void ui_status_bar_create(void)
     lv_obj_set_clickable(right, false);
     lv_obj_set_event_bubble(right, true);
 
+    s_bt = icon(right, LV_SYMBOL_BLUETOOTH);
+    lv_obj_set_hidden(s_bt, true);
+    lv_obj_set_event_bubble(s_bt, true);
+    s_wifi = icon(right, LV_SYMBOL_WIFI);
+    lv_obj_set_hidden(s_wifi, true);
+    lv_obj_set_event_bubble(s_wifi, true);
     s_sd = icon(right, LV_SYMBOL_SD_CARD);
     lv_obj_set_hidden(s_sd, true);
     lv_obj_set_event_bubble(s_sd, true);

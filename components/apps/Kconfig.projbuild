@@ -16,4 +16,12 @@ config OS_APP_MUSIC
     bool "Music player"
     default y
 
+config OS_APP_LED
+    bool "RGB LED control"
+    default y
+
+config OS_APP_RECORDER
+    bool "Voice recorder"
+    default y
+
 endmenu

@@ -31,7 +31,7 @@ lv_obj_t* launcherBuild() {
     const Manifest& m = *slotAt(i)->m;
     lv_obj_t* tile = lv_obj_create(grid);
     lv_obj_remove_style_all(tile);
-    lv_obj_set_size(tile, 104, 100);
+    lv_obj_set_size(tile, 100, 100);
     lv_obj_set_style_bg_color(tile, lv_color_make(0x1C, 0x21, 0x28), 0);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(tile, lv_color_make(0x2A, 0x32, 0x3D), LV_STATE_PRESSED);

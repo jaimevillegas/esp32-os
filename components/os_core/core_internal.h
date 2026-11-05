@@ -89,6 +89,14 @@ Slot* foreground();
 // ---- feature glue (one file each, owned by the feature) -----------------------------------
 Fs* fsService();                 // storage_glue.cpp: nullptr until the storage service exists
 Audio* audioService();           // audio_glue.cpp
+Net* netService();               // net_glue.cpp
+Ble* bleService();               // ble_glue.cpp
+Led* ledService();               // led_glue.cpp
+Recorder* recorderService();     // recorder_glue.cpp
+void netStart();                 // net_glue.cpp:      called once before the UI starts
+void bleStart();                 // ble_glue.cpp
+void ledStart();                 // led_glue.cpp
+void recorderStart();            // recorder_glue.cpp
 void storageStart();             // storage_glue.cpp: called once before the UI starts
 void audioStart();               // audio_glue.cpp:   called once before the UI starts
 void requestSleep();             // sleep_glue.cpp:   any task; performs the sleep on the ui task

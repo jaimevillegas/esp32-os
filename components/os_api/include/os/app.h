@@ -11,13 +11,17 @@
 
 namespace os {
 
-enum Perm : uint32_t { NET = 1, AUDIO = 2, SD = 4, BLE = 8, NVS = 16, LONG_TASK = 32 };
+enum Perm : uint32_t { NET = 1, AUDIO = 2, SD = 4, BLE = 8, NVS = 16, LONG_TASK = 32, LED = 64 };
 
 // Topic payloads (Msg.arg):
 //   Power   : bits 0-7 percent, bit 8 usb, bit 9 charging
 //   Storage : 1 = microSD mounted, 0 = removed / unmounted
 //   Audio   : bits 0-7 = PlayState, bits 8-15 = volume percent
-enum class Topic : uint16_t { None = 0, Power, Network, Snapshot, AppState, Storage, Audio, User = 0x100 };
+//   Network : bits 0-7 WifiState, bit 8 = a scan finished
+//   Ble     : bits 0-7 BleState, bit 8 = a scan finished
+//   Recorder: bit 0 = recording, bit 1 = error
+//   Media   : transport request from outside the Music app (shade, remote): 1 = previous, 2 = next
+enum class Topic : uint16_t { None = 0, Power, Network, Snapshot, AppState, Storage, Audio, Ble, Recorder, Media, User = 0x100 };
 
 struct Msg {                 // 16 bytes, copied by value
   Topic    topic;
@@ -116,20 +120,117 @@ class Audio {
   virtual void status(AudioStatus& out) const = 0;
 };
 
-class Net;    // not implemented yet; ctx.net() returns nullptr
+// ---- Wi-Fi (Perm::NET) -------------------------------------------------------------------
+enum class WifiState : uint8_t { Off = 0, Idle, Scanning, Connecting, Connected, Failed };
+
+struct WifiAp {
+  char    ssid[33];
+  int8_t  rssi;
+  bool    secured;           // false = open network
+  bool    saved;             // credentials stored
+};
+
+struct WifiStatus {
+  WifiState state;
+  char      ssid[33];        // network connected / being connected
+  int8_t    rssi;
+  uint32_t  ip;              // IPv4, host order; 0 when none
+  uint8_t   fail_reason;     // implementation specific, valid in Failed
+};
+
+// Station-mode Wi-Fi. Calls are non-blocking; progress is published as Topic::Network.
+class Net {
+ public:
+  virtual ~Net() = default;
+  virtual bool setEnabled(bool on) = 0;        // powers the radio on/off (persisted)
+  virtual bool enabled() const = 0;
+  virtual bool scan() = 0;                     // async; Topic::Network (bit 8) when done
+  virtual int  scanResults(WifiAp* out, int max) = 0;     // dedup by SSID, strongest first
+  virtual bool connect(const char* ssid, const char* password, bool remember) = 0;  // password nullptr = use saved
+  virtual void disconnect() = 0;
+  virtual void forget(const char* ssid) = 0;
+  virtual void status(WifiStatus& out) const = 0;
+};
+
+// ---- Bluetooth Low Energy (Perm::BLE) ----------------------------------------------------
+// The ESP32-S3 has BLE only (no Bluetooth Classic / A2DP): headphones cannot be used.
+enum class BleState : uint8_t { Off = 0, Idle, Scanning, Connecting, Connected };
+
+struct BleDevice {
+  char    name[32];          // empty when the device does not advertise a name
+  uint8_t addr[6];
+  uint8_t addr_type;
+  int8_t  rssi;
+  bool    connectable;
+  bool    bonded;
+  bool    connected;
+};
+
+class Ble {
+ public:
+  virtual ~Ble() = default;
+  virtual bool setEnabled(bool on) = 0;        // brings the stack up/down on demand (persisted)
+  virtual bool enabled() const = 0;
+  virtual bool startScan(uint32_t duration_ms) = 0;   // async; Topic::Ble (bit 8) when done
+  virtual void stopScan() = 0;
+  virtual int  devices(BleDevice* out, int max) = 0;  // scanned and bonded devices
+  virtual bool connect(const BleDevice& d) = 0;
+  virtual void disconnect(const BleDevice& d) = 0;
+  virtual void forget(const BleDevice& d) = 0;
+  virtual BleState state() const = 0;
+};
+
+// ---- RGB LED (Perm::LED) -----------------------------------------------------------------
+class Led {
+ public:
+  virtual ~Led() = default;
+  virtual void set(uint8_t r, uint8_t g, uint8_t b) = 0;   // 0..255 per channel, shown immediately
+  virtual void off() = 0;
+};
+
+// ---- Microphone recorder (needs Perm::AUDIO | Perm::SD) ----------------------------------
+struct RecStatus {
+  bool     recording;
+  bool     error;
+  uint32_t elapsed_ms;
+  uint32_t bytes;            // size of the WAV written so far
+  uint8_t  level;            // 0..100 peak of the last ~100 ms
+  char     path[96];         // file being / last written
+};
+
+class Recorder {
+ public:
+  virtual ~Recorder() = default;
+  virtual bool start(const char* dir) = 0;     // creates dir, names the file itself (WAV 16 bit mono)
+  virtual void stop() = 0;
+  virtual void status(RecStatus& out) const = 0;
+};
+
+// Pointers to the system services, filled by os_core. Null while a service does not exist.
+struct Services {
+  Fs* fs = nullptr;
+  Audio* audio = nullptr;
+  Net* net = nullptr;
+  Ble* ble = nullptr;
+  Led* led = nullptr;
+  Recorder* rec = nullptr;
+};
 
 class Context {              // injected; services are null when the permission is missing
  public:
   Context(Bus& bus, Kv& kv, Device& dev, std::pmr::memory_resource& mem, uint32_t perms,
-          Fs* fs = nullptr, Audio* audio = nullptr)
-      : bus_(bus), kv_(kv), dev_(dev), mem_(mem), perms_(perms), fs_(fs), audio_(audio) {}
+          const Services& sv = {})
+      : bus_(bus), kv_(kv), dev_(dev), mem_(mem), perms_(perms), sv_(sv) {}
   Bus& bus() { return bus_; }
   Kv& kv() { return kv_; }
   Device& device() { return dev_; }
   std::pmr::memory_resource& mem() { return mem_; }     // the app's PSRAM arena
-  Net* net() { return nullptr; }
-  Audio* audio() { return has(AUDIO) ? audio_ : nullptr; }
-  Fs* sd() { return has(SD) ? fs_ : nullptr; }
+  Net* net() { return has(NET) ? sv_.net : nullptr; }
+  Ble* ble() { return has(BLE) ? sv_.ble : nullptr; }
+  Led* led() { return has(LED) ? sv_.led : nullptr; }
+  Recorder* recorder() { return has(AUDIO) && has(SD) ? sv_.rec : nullptr; }
+  Audio* audio() { return has(AUDIO) ? sv_.audio : nullptr; }
+  Fs* sd() { return has(SD) ? sv_.fs : nullptr; }
   bool has(Perm p) const { return perms_ & p; }
 
  private:
@@ -138,8 +239,7 @@ class Context {              // injected; services are null when the permission 
   Device& dev_;
   std::pmr::memory_resource& mem_;
   uint32_t perms_;
-  Fs* fs_;
-  Audio* audio_;
+  Services sv_;
 };
 
 class App {

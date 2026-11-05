@@ -50,6 +50,12 @@ void os_ui_set_brightness_commit_cb(void (*cb)(uint8_t pct));
 // Shows/hides the microSD icon in the status bar. Thread-safe (just sets a flag).
 void os_ui_set_sd_present(bool present);
 
+// Status bar radio icons. Thread-safe (just set flags, drawn by the 1 s refresh).
+// wifi: -1 = hidden (radio off), 0 = on but not connected, 1..3 = connected, signal bars.
+// bt:   0 = hidden (stack off), 1 = on, 2 = a device is connected.
+void os_ui_set_wifi(int level);
+void os_ui_set_bt(int state);
+
 // Status bar title. With a `back_cb` the title shows a back chevron and is tappable.
 void os_ui_set_title(const char *name, void (*back_cb)(void));
 

@@ -43,6 +43,10 @@ extern "C" void os_core_start(void) {
   managerInit();
   storageStart();
   audioStart();
+  netStart();
+  bleStart();
+  ledStart();
+  recorderStart();
   os_ui_set_brightness_commit_cb(onBrightnessCommit);
   os_power_set_change_cb(onPowerChange);
   startServices();
