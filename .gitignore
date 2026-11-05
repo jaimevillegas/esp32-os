@@ -8,3 +8,4 @@ dependencies.lock
 docs/
 sdkconfig.defaults.bench
 sdkconfig.bench
+.claude/

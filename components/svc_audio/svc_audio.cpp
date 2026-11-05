@@ -34,14 +34,16 @@ static const char *TAG = "audio";
 #define PIN_MCLK GPIO_NUM_17
 #define PIN_BCLK GPIO_NUM_18
 #define PIN_WS GPIO_NUM_21
-#define PIN_DOUT GPIO_NUM_16
-#define PIN_DIN GPIO_NUM_15
+// Data direction verified against the vendor demo (Example_16_music: I2S_DOUT = 15).
+#define PIN_DOUT GPIO_NUM_15           // ESP32 -> ES8311 DSDIN
+#define PIN_DIN GPIO_NUM_16            // ES8311 ASDOUT -> ESP32 (microphone, unused for now)
 #define PIN_PA GPIO_NUM_1             // power amplifier, active LOW
 
-// Output level ceiling. The codec DAC is fixed at -9 dB (0.5 dB per step below 0xBF) and the
-// user volume only attenuates from there, so volume 100 can never exceed this level. Lower
-// SVC_DAC_CAP_REG if the speaker is small.
-#define SVC_DAC_CAP_REG 0xAD
+// Output level ceiling. The codec DAC is fixed at -3 dB (0xBF = 0 dB, 0.5 dB per step) and the
+// user volume only attenuates from there, so volume 100 can never exceed this level. It was
+// -9 dB (0xAD) at first; +6 dB was needed for the small on-board speaker. Raise towards 0xBF for
+// more level, lower it if loud tracks start to distort.
+#define SVC_DAC_CAP_REG 0xB9
 // Attenuation range of the volume curve (dB below the cap at volume 1).
 #define SVC_VOL_RANGE_DB 40.0f
 
@@ -584,8 +586,43 @@ static bool endsWithNoCase(const char *s, const char *ext) {
     return n >= e && strcasecmp(s + n - e, ext) == 0;
 }
 
+// Hardware test: a 440 Hz sine for 1.5 s pushed through the normal ring/I2S/codec path.
+static Result playTone(uint32_t gen) {
+    const uint32_t rate = 44100, total = rate * 3 / 2;
+    setDuration(gen, 1500);
+    setFormat(rate);
+    int16_t buf[512];                               // 256 stereo frames
+    float phase = 0;
+    const float inc = 2.0f * (float)M_PI * 440.0f / (float)rate;
+    for (uint32_t done = 0; done < total;) {
+        if (aborted(gen)) return kAborted;
+        for (int i = 0; i < 256; i++) {
+            const int16_t v = (int16_t)(sinf(phase) * 16000.0f);
+            buf[2 * i] = buf[2 * i + 1] = v;
+            phase += inc;
+            if (phase > 2.0f * (float)M_PI) phase -= 2.0f * (float)M_PI;
+        }
+        if (!ringWrite(gen, buf, sizeof buf)) return kAborted;
+        done += 256;
+    }
+    uint32_t quiet_since = 0;
+    for (;;) {                                      // wait for the ring to drain
+        if (aborted(gen)) return kAborted;
+        if (!ringEmpty()) { quiet_since = 0; vTaskDelay(pdMS_TO_TICKS(10)); continue; }
+        if (!quiet_since) quiet_since = nowMs();
+        if (nowMs() - quiet_since >= 80) return kDone;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 static void runTrack(const char *path, uint32_t gen) {
     if (!hwInit()) { setStateIfCurrent(gen, SVC_AUDIO_ERROR, false); return; }
+    if (!strcmp(path, "@tone")) {
+        ringFlush();
+        const Result r = playTone(gen);
+        if (r == kDone) setStateIfCurrent(gen, SVC_AUDIO_STOPPED, true);
+        return;
+    }
     struct stat sb;
     const int fd = stat(path, &sb) == 0 ? open(path, O_RDONLY) : -1;
     if (fd < 0) {

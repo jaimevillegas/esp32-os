@@ -4,6 +4,10 @@
 // end (state is Stopped). Events are published on state changes only, never on volume changes
 // (a slider drag would flood the bus queues and could drop the end-of-track event).
 #include "core_internal.h"
+#include "sdkconfig.h"
+#include "esp_log.h"
+#include "freertos/task.h"
+#include "freertos/FreeRTOS.h"
 #include "esp_timer.h"
 #include "svc_audio.h"
 
@@ -60,6 +64,15 @@ static bool s_started;
 
 Audio* audioService() { return s_started ? &s_audio : nullptr; }
 
+#ifdef CONFIG_SVC_AUDIO_BOOT_BEEP
+static void bootBeepTask(void*) {
+  vTaskDelay(pdMS_TO_TICKS(4000));
+  ESP_LOGW("audio", "boot beep: playing the 440 Hz test tone");
+  svc_audio_play("@tone");
+  vTaskDelete(nullptr);
+}
+#endif
+
 void audioStart() {
   uint32_t v;
   if (!systemKv().getU32("volume", v) || v > 100) v = kDefaultVolume;
@@ -68,6 +81,9 @@ void audioStart() {
   const esp_timer_create_args_t args = {.callback = onPersist, .name = "vol_save"};
   esp_timer_create(&args, &s_persist_timer);
   s_started = true;
+#ifdef CONFIG_SVC_AUDIO_BOOT_BEEP
+  xTaskCreate(bootBeepTask, "beep", 3072, nullptr, 3, nullptr);
+#endif
 }
 
 }  // namespace os::core

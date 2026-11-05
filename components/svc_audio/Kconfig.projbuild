@@ -1,0 +1,7 @@
+menu "Audio engine"
+
+config SVC_AUDIO_BOOT_BEEP
+    bool "Play a test tone 4 s after boot (hardware bring-up)"
+    default n
+
+endmenu
