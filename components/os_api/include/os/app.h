@@ -164,6 +164,7 @@ struct BleDevice {
   bool    connectable;
   bool    bonded;
   bool    connected;
+  int8_t  battery;           // percent read from the Battery service, -1 when unknown
 };
 
 class Ble {
